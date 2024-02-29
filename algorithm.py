@@ -12,10 +12,9 @@ from joblib import dump, load
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import normalize
 import string
-from transformers import AutoTokenizer, AutoModel,\
+from transformers import AutoTokenizer, AutoModel, \
     BartForConditionalGeneration, BartTokenizer
 import torch
-
 
 nltk.download('stopwords')
 nltk.download('wordnet')
@@ -23,14 +22,55 @@ nltk.download('punkt')
 nltk.download('omw-1.4')
 punctuation = list(punctuation)
 m = Mystem()
-tf_idf_vect = load(r'C:\Users\sahab\Desktop\хакатон\TalentMatch\tfidf.joblib')
+tf_idf_vect = load(r'C:\Users\vsevo\PycharmProjects\pythonProject6\TalentMatch\tfidf.joblib')
 printable = set(string.printable)
 
-bart_tokenizer = BartTokenizer.from_pretrained("Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
-bart_model = BartForConditionalGeneration.from_pretrained("Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
+bart_tokenizer = BartTokenizer.from_pretrained(
+    "Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
+bart_model = BartForConditionalGeneration.from_pretrained(
+    "Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
 
 hrbert_tokenizer = AutoTokenizer.from_pretrained("RabotaRu/HRBert-mini", model_max_length=512)
 hrbert_model = AutoModel.from_pretrained("RabotaRu/HRBert-mini")
+
+
+def concat_vacancy(vacancy: dict) -> str:
+
+    name = vacancy.get('name', '')
+    keywords = str(vacancy.get('keywords', ''))
+    description = vacancy.get('description', '')
+    comment = vacancy.get('comment', '')
+
+    string = ' '.join(
+        [
+            name if name is not None else '',
+            keywords if keywords is not None else '',
+            description if description is not None else '',
+            comment if comment is not None else '',
+        ]
+    )
+
+    return string
+
+
+def concat_resume(resume: dict):
+
+    resume_concated = []
+
+    exp_item = resume.get('experienceItem', '')
+    key_skills = str(resume.get('key_skills', '')) + str(resume.get('about', ''))
+
+    if exp_item is not None:
+        for desc in exp_item:
+            description = desc.get('description', '')
+
+            if description is not None:
+                resume_concated.append(description)
+
+    resume_concated = ' '.join(resume_concated) if len(resume_concated) else ''
+
+    return (key_skills, resume_concated)
+
 
 def remove_html_tags(text):
     text = text.replace('&nbsp', " ")
@@ -52,11 +92,12 @@ def translate_text_crazyML(text: str, lang: str) -> str:
         return text
 
 
-def translate_chunked_crazyML(text: str, lang: str, chunk_size: int=4999) -> str:
+def translate_chunked_crazyML(text: str, lang: str, chunk_size: int = 4999) -> str:
     chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
     translated_chunks = [translate_text_crazyML(chunk, lang) for chunk in chunks]
 
     return ''.join(translated_chunks)
+
 
 # Перевод текста на русский язык
 def translate_text(text):
@@ -71,7 +112,7 @@ def translate_text(text):
 
 # Разбиение на чанки для перевода
 def translate_chunked(text, chunk_size=4999):
-    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    chunks = [text[i1:i1 + chunk_size] for i1 in range(0, len(text), chunk_size)]
     translated_chunks = [translate_text(chunk) for chunk in chunks]
 
     return ''.join(translated_chunks)
@@ -134,6 +175,7 @@ def get_vacancy_key_words(s: str) -> str:
         print("Ошибка при выполнении запроса:", response.status_code)
         return s
 
+
 def text_cos_sim(vac: str,
                  resume: str,
                  model=hrbert_model,
@@ -144,10 +186,10 @@ def text_cos_sim(vac: str,
     inputs_resume = tokenizer(resume, return_tensors="pt", truncation=True)
     outputs_resume = model(**inputs_resume)[1][0]
 
-    cosine_res_vac = torch.dot(outputs_resume, outputs_vac)\
-        /(torch.norm(outputs_resume) * torch.norm(outputs_vac))
-    cosine_vac_res = torch.dot(outputs_vac, outputs_resume)\
-        /(torch.norm(outputs_vac) * torch.norm(outputs_resume))
+    cosine_res_vac = torch.dot(outputs_resume, outputs_vac) \
+                     / (torch.norm(outputs_resume) * torch.norm(outputs_vac))
+    cosine_vac_res = torch.dot(outputs_vac, outputs_resume) \
+                     / (torch.norm(outputs_vac) * torch.norm(outputs_resume))
 
     cosin_mean_val = torch.mean(
         torch.tensor([cosine_res_vac, cosine_vac_res])
@@ -155,56 +197,64 @@ def text_cos_sim(vac: str,
 
     return cosin_mean_val
 
+
 def tf_idf_cos_sim(vac: str,
-                       resume: str,
-                       vectorizer=tf_idf_vect):
+                   resume: str,
+                   vectorizer=tf_idf_vect):
+    vac = normalize_text(remove_html_tags(translate_chunked(vac)))
+    vac_vect = vectorizer.transform([vac])
+    resume = normalize_text(remove_html_tags((' '.join(resume))))
+    resume_vect = vectorizer.transform([resume])
+    cosin_sim = cosine_similarity(vac_vect[0], resume_vect[0])
 
-        vac = normalize_text(remove_html_tags(translate_chunked(vac)))
-        vac_vect = vectorizer.transform([vac])
-        resume = normalize_text(remove_html_tags(translate_chunked(' '.join(resume))))
-        resume_vect = vectorizer.transform([resume])
-        cosin_sim = cosine_similarity(vac_vect[0], resume_vect[0])
+    print (cosin_sim)
 
-        return cosin_sim
+    return cosin_sim[0][0]
+
 
 def cv_cos_sim(vac: str,
-                   resume: str):
+               resume: str):
+    vac = normalize_text(remove_html_tags(vac))
+    cv_vectorizer = CountVectorizer(binary=True).fit([vac])
+    vac_vect = cv_vectorizer.transform([vac])
+    resume = normalize_text(remove_html_tags(translate_chunked(' '.join(resume))))
+    resume_vect = cv_vectorizer.transform([resume])
+    cosin_sim = cosine_similarity(vac_vect[0], resume_vect[0])
 
-        vac = normalize_text(remove_html_tags(vac))
-        cv_vectorizer = CountVectorizer(binary=True).fit([vac])
-        vac_vect = cv_vectorizer.transform([vac])
-        resume = normalize_text(remove_html_tags(translate_chunked(' '.join(resume))))
-        resume_vect = cv_vectorizer.transform([resume])
-        cosin_sim = cosine_similarity(vac_vect[0], resume_vect[0])
+    print(cosin_sim)
 
-        return cosin_sim
+    return cosin_sim[0][0]
+
 
 def agregated_cos_sim(array_text, array_tf_idf, array_cv):
+    array_text = normalize([array_text], norm="l1")[0]
+    array_tf_idf = normalize([array_tf_idf], norm="l1")[0]
+    array_cv = normalize([array_cv], norm="l1")[0]
 
-        array_text = normalize([array_text], norm="l1")[0]
-        array_tf_idf = normalize([array_tf_idf], norm="l1")[0]
-        array_cv = normalize([array_cv], norm="l1")[0]
+    array_itog = [(i1 + i2 + i3) / 3 for i1, i2, i3 in zip(array_text, array_tf_idf, array_cv)]
+    return array_itog
 
-        array_itog = [(i1 + i2 + i3) / 3 for i1, i2, i3 in zip(array_text, array_tf_idf, array_cv)]
-        return array_itog
 
-def algorithm (vacancy_str, resumes_str):
-        array_text = []
-        array_tf_idf = []
-        array_cv = []
+def algorithm(vacancy_str, resumes_str):
+    array_text = []
+    array_tf_idf = []
+    array_cv = []
 
-        vacancy_str_for_cv = get_vacancy_key_words (vacancy_str)
+    vacancy_str = concat_vacancy(vacancy_str)
+    vacancy_str_for_cv = get_vacancy_key_words(vacancy_str)
 
-        for resume in resumes_str:
-            array_text.append(text_cos_sim(vacancy_str, resume))
-            array_tf_idf.append(tf_idf_cos_sim(vacancy_str, resume))
-            array_cv.append(cv_cos_sim(vacancy_str_for_cv, resume))
+    for resume in resumes_str:
 
-        res = agregated_cos_sim (array_text, array_tf_idf, array_cv)
-        return res
+        array_text.append(encode_text_data(vacancy_str, concat_resume(resume)))
+        array_tf_idf.append(tf_idf_cos_sim(vacancy_str, concat_resume(resume)))
+        array_cv.append(cv_cos_sim(vacancy_str_for_cv, concat_resume(resume)))
+
+    res = agregated_cos_sim(array_text, array_tf_idf, array_cv)
+    return res
+
 
 def summarize_text(text: str, model=bart_model, tokenizer=bart_tokenizer) -> str:
-    input_ids = tokenizer(text, return_tensors="pt")
+    input_ids = tokenizer(text, return_tensors="pt", truncation=True)
     generated_tokens = model.generate(**input_ids)
 
     result = tokenizer.batch_decode(
@@ -214,34 +264,35 @@ def summarize_text(text: str, model=bart_model, tokenizer=bart_tokenizer) -> str
 
     return result[0]
 
+
 def encode_text_data(vac: str,
-                     res: tuple[str, str],
+                     res: tuple,
                      model_sum=bart_model,
                      token_sum=bart_tokenizer,
                      model_emb=hrbert_model,
                      token_emb=hrbert_tokenizer
-                    ) -> float:
+                     ) -> float:
     res_stack = res[0]
     res_exp = res[1]
-    
-    resume_exp_translated = translate_chunked(res_exp, "en")
+
+    resume_exp_translated = translate_chunked_crazyML(res_exp, "en")
     resume_exp_translated = ''.join(
         filter(lambda x: x in printable, resume_exp_translated)
     )
-    
+
     resume_exp_summary = summarize_text(
         resume_exp_translated,
         model_sum,
         token_sum
     )
-    
-    resume_summary_translated = translate_chunked(res_exp, "ru")
-    
+
+    resume_summary_translated = translate_chunked_crazyML(res_exp, "ru")
+
     cos_sim = text_cos_sim(
         vac,
         resume_summary_translated + "\n" + res_stack,
         model_emb,
         token_emb
     )
-    
+
     return cos_sim
