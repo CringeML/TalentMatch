@@ -22,7 +22,7 @@ nltk.download('punkt')
 nltk.download('omw-1.4')
 punctuation = list(punctuation)
 m = Mystem()
-tf_idf_vect = load(r'C:\Users\vsevo\PycharmProjects\pythonProject6\TalentMatch\tfidf.joblib')
+tf_idf_vect = load(r'tfidf.joblib')
 printable = set(string.printable)
 
 bart_tokenizer = BartTokenizer.from_pretrained(
