@@ -12,7 +12,7 @@ from joblib import dump, load
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import normalize
 import string
-from transformers import BertTokenizer, BertModel,\
+from transformers import AutoTokenizer, AutoModel,\
     BartForConditionalGeneration, BartTokenizer
 import torch
 
