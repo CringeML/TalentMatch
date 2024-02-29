@@ -9,9 +9,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 import requests
 import json
 from joblib import dump, load
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import normalize
+import string
+from transformers import BertTokenizer, BertModel,\
+    BartForConditionalGeneration, BartTokenizer
+import torch
+
 
 nltk.download('stopwords')
 nltk.download('wordnet')
@@ -19,14 +23,40 @@ nltk.download('punkt')
 nltk.download('omw-1.4')
 punctuation = list(punctuation)
 m = Mystem()
-tf_idf_vect = load(r'C:\Users\vsevo\PycharmProjects\pythonProject6\TalentMatch\tfidf.joblib')
+tf_idf_vect = load(r'C:\Users\sahab\Desktop\хакатон\TalentMatch\tfidf.joblib')
+printable = set(string.printable)
 
+bart_tokenizer = BartTokenizer.from_pretrained("Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
+bart_model = BartForConditionalGeneration.from_pretrained("Ameer05/bart-large-cnn-samsum-rescom-finetuned-resume-summarizer-10-epoch")
+
+hrbert_tokenizer = AutoTokenizer.from_pretrained("RabotaRu/HRBert-mini", model_max_length=512)
+hrbert_model = AutoModel.from_pretrained("RabotaRu/HRBert-mini")
 
 def remove_html_tags(text):
     text = text.replace('&nbsp', " ")
     clean = re.compile('<.*?>')
     return re.sub(clean, '', text)
 
+
+def remove_non_ascii_crazyML(text):
+    return ''.join(i for i in text if ord(i) < 128)
+
+
+def translate_text_crazyML(text: str, lang: str) -> str:
+    translator = GoogleTranslator(source='auto', target=lang)
+    try:
+        translation = translator.translate(text)
+        return translation
+    except Exception as e:
+
+        return text
+
+
+def translate_chunked_crazyML(text: str, lang: str, chunk_size: int=4999) -> str:
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    translated_chunks = [translate_text_crazyML(chunk, lang) for chunk in chunks]
+
+    return ''.join(translated_chunks)
 
 # Перевод текста на русский язык
 def translate_text(text):
@@ -104,9 +134,26 @@ def get_vacancy_key_words(s: str) -> str:
         print("Ошибка при выполнении запроса:", response.status_code)
         return s
 
-def text_cos_sim():
+def text_cos_sim(vac: str,
+                 resume: str,
+                 model=hrbert_model,
+                 tokenizer=hrbert_tokenizer) -> float:
+    inputs_vac = tokenizer(vac, return_tensors="pt", truncation=True)
+    outputs_vac = model(**inputs_vac)[1][0]
 
-        return
+    inputs_resume = tokenizer(resume, return_tensors="pt", truncation=True)
+    outputs_resume = model(**inputs_resume)[1][0]
+
+    cosine_res_vac = torch.dot(outputs_resume, outputs_vac)\
+        /(torch.norm(outputs_resume) * torch.norm(outputs_vac))
+    cosine_vac_res = torch.dot(outputs_vac, outputs_resume)\
+        /(torch.norm(outputs_vac) * torch.norm(outputs_resume))
+
+    cosin_mean_val = torch.mean(
+        torch.tensor([cosine_res_vac, cosine_vac_res])
+    ).item()
+
+    return cosin_mean_val
 
 def tf_idf_cos_sim(vac: str,
                        resume: str,
@@ -156,3 +203,45 @@ def algorithm (vacancy_str, resumes_str):
         res = agregated_cos_sim (array_text, array_tf_idf, array_cv)
         return res
 
+def summarize_text(text: str, model=bart_model, tokenizer=bart_tokenizer) -> str:
+    input_ids = tokenizer(text, return_tensors="pt")
+    generated_tokens = model.generate(**input_ids)
+
+    result = tokenizer.batch_decode(
+        generated_tokens,
+        skip_special_tokens=True
+    )
+
+    return result[0]
+
+def encode_text_data(vac: str,
+                     res: tuple[str, str],
+                     model_sum=bart_model,
+                     token_sum=bart_tokenizer,
+                     model_emb=hrbert_model,
+                     token_emb=hrbert_tokenizer
+                    ) -> float:
+    res_stack = res[0]
+    res_exp = res[1]
+    
+    resume_exp_translated = translate_chunked(res_exp, "en")
+    resume_exp_translated = ''.join(
+        filter(lambda x: x in printable, resume_exp_translated)
+    )
+    
+    resume_exp_summary = summarize_text(
+        resume_exp_translated,
+        model_sum,
+        token_sum
+    )
+    
+    resume_summary_translated = translate_chunked(res_exp, "ru")
+    
+    cos_sim = text_cos_sim(
+        vac,
+        resume_summary_translated + "\n" + res_stack,
+        model_emb,
+        token_emb
+    )
+    
+    return cos_sim
