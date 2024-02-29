@@ -17,7 +17,7 @@ def eval_json(vacancy_resumes):
     vacancy = vacancy_resumes['vacancy']
     resumes = vacancy_resumes['resumes']
     df_resumes = pd.json_normalize(vacancy_resumes['resumes'])
-    df_resumes['relevance'] = algorithm (vacancy, resumes)
+    df_resumes['relevancy'] = algorithm (vacancy, resumes)
 
     return df_resumes
 
